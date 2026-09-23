@@ -2,22 +2,34 @@
 
 Idempotency, without and with Temporal, as three small Python programs. Alice clicks Like once. The server does the work, the response is lost, and the client retries. Each stage asks the same question: what happens if this runs twice?
 
-| Stage | File | What it shows |
+## The stages
+
+Each folder under `src/` stands alone: its own copy of `db.py`, runnable on its own. Read them in order.
+
+| Folder | Lines | What it adds |
 |---|---|---|
-| 1. Naive | `naive.py` | `+1` run twice counts the like twice. Storing the like as state, `(alice, video-123) = LIKE`, and `SET`ting the count from it does not. |
-| 2. Hand-rolled | `hand_rolled.py` | The like causes more work: update the count, notify the creator. Making that safe to retry by hand means stable event IDs, a table of finished steps, and a list of TODOs that add up to a workflow engine. |
-| 3. Temporal | `workflows.py`, `activities.py`, `worker.py`, `starter.py` | Temporal records each finished step, retries failures and resumes on another worker. The activities still have to be safe to run twice. |
+| `src/1-naive` | 38 | `like_add`, a `+1`, run twice counts the like twice: 1204 → 1206. `like_set` stores the like as state, `(alice, video-123) = LIKE`, and `SET`s the count from the reactions: 1205, however many times it runs. |
+| `src/2-hand-rolled` | 97 | The like causes more work: update the count, notify the creator. Made safe to retry by hand with a stable event ID, a table of finished steps, one transaction for the count and its checkmark, and five TODOs (leases, dead-worker recovery, retries, timeouts, visibility) that add up to a workflow engine. |
+| `src/3-temporal` | 25 + 38 | The same two steps as a workflow (`workflows.py`) and two activities (`activities.py`). Temporal records each finished step, retries failures and resumes on another worker. The activities still have to be safe to run twice. `worker.py` and `starter.py` are the plumbing. |
+
+Useful diffs:
+
+```bash
+diff src/1-naive/db.py src/2-hand-rolled/db.py   # the notification service, which drops a repeated event ID
+cat src/2-hand-rolled/hand_rolled.py             # doing it by hand
+cat src/3-temporal/workflows.py                  # the same steps, with Temporal
+```
 
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), the [Temporal CLI](https://docs.temporal.io/cli) and optionally [just](https://github.com/casey/just) (each recipe is one command; see `justfile`).
 
 ```bash
-uv run naive.py
-uv run hand_rolled.py
+cd src/1-naive && uv run naive.py
+cd src/2-hand-rolled && uv run hand_rolled.py
 ```
 
-The Temporal stage uses three terminals:
+The Temporal stage uses three terminals, all in `src/3-temporal`:
 
 ```bash
 temporal server start-dev --ui-port 8233   # 1: server, UI at http://localhost:8233
@@ -29,7 +41,7 @@ uv run starter.py --retry                  # 3: Alice likes the video; the clien
 
 ## Crash it
 
-`CRASH_AT=<point>` makes the worker exit hard the first time it reaches that point, as a killed machine would. Start a second `uv run worker.py` (without `CRASH_AT`) and it picks up the work.
+In `src/3-temporal`, `CRASH_AT=<point>` makes the worker exit hard the first time it reaches that point, as a killed machine would. Start a second `uv run worker.py` (without `CRASH_AT`) and it picks up the work.
 
 | Command in terminal 2 | What happens |
 |---|---|
@@ -51,7 +63,7 @@ The last two rows are the point. Temporal remembers progress and retries for you
 ## Tests
 
 ```bash
-uv run pytest -q
+just test   # or: cd src/1-naive && uv run pytest -q; cd src/3-temporal && uv run pytest -q
 ```
 
 Each test runs an operation twice and checks the result, including the two activities under Temporal's `ActivityEnvironment`.

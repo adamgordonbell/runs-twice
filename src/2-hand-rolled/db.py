@@ -1,4 +1,4 @@
-"""The app's own database, shared by all three stages. SQLite stands in for Postgres.
+"""The app's database. SQLite stands in for Postgres.
 
 A seeded video starts with 1204 likes, stored as 1204 reaction rows, so the like
 count can always be recomputed from the reactions rather than incremented.
