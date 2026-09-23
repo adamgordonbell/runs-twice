@@ -8,8 +8,8 @@ Each folder under `src/` stands alone: its own copy of `db.py`, runnable on its 
 
 | Folder | Lines | What it adds |
 |---|---|---|
-| `src/1-add` | 29 | A like is `+1`. The response is lost, the client retries, and one click counts twice: 1204 → 1206. |
-| `src/2-set` | 38 | A like is state, `(alice, video-123) = LIKE`, and the count is `SET` from the reactions. The retry finds the same row and computes the same count: 1205. |
+| `src/1-add` | 30 | A like is `+1`. The response is lost, the client retries, and one click counts twice: 1204 → 1206. |
+| `src/2-set` | 40 | A like is state, `(alice, video-123) = LIKE`, and the count is `SET` from the reactions. The retry finds the same row and computes the same count: 1205. |
 | `src/3-hand-rolled` | 97 | The like causes more work: update the count, notify the creator. Made safe to retry by hand with a stable event ID, a table of finished steps, one transaction for the count and its checkmark, and five TODOs (leases, dead-worker recovery, retries, timeouts, visibility) that add up to a workflow engine. |
 | `src/4-temporal` | 25 + 38 | The same two steps as a workflow (`workflows.py`) and two activities (`activities.py`). Temporal records each finished step, retries failures and resumes on another worker. The activities still have to be safe to run twice. `worker.py` and `starter.py` are the plumbing. |
 
