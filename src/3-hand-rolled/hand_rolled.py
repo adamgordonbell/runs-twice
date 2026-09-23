@@ -1,4 +1,4 @@
-"""Stage 2: the like causes more work, made safe to retry by hand.
+"""Stage 3: the like causes more work, made safe to retry by hand.
 
 The request handler stores the reaction and an event with a stable ID in one
 transaction. A worker then updates the like count and notifies the creator, and

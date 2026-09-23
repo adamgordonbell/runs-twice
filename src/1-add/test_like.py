@@ -3,7 +3,7 @@
 import pytest
 
 import db
-import naive
+import like
 
 
 @pytest.fixture(autouse=True)
@@ -12,13 +12,7 @@ def fresh_db(tmp_path, monkeypatch):
     db.reset()
 
 
-def test_add_twice_counts_twice():
+def test_run_twice_counts_twice():
     with db.connect() as conn:
-        naive.click_like(naive.like_add, conn)
+        like.click_like(conn)
         assert db.like_count(conn) == 1206
-
-
-def test_set_twice_counts_once():
-    with db.connect() as conn:
-        naive.click_like(naive.like_set, conn)
-        assert db.like_count(conn) == 1205
