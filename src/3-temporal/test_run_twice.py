@@ -16,7 +16,7 @@ def fresh_db(tmp_path, monkeypatch):
 
 def test_update_like_count_twice():
     with db.connect() as conn:
-        db.set_reaction(conn, "alice", db.VIDEO)
+        conn.execute("INSERT INTO reactions VALUES ('alice', ?, 'LIKE')", (db.VIDEO,))
     env = ActivityEnvironment()
     assert env.run(update_like_count, db.VIDEO) == 1205
     assert env.run(update_like_count, db.VIDEO) == 1205

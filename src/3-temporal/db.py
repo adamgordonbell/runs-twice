@@ -2,6 +2,7 @@
 
 A seeded video starts with 1204 likes, stored as 1204 reaction rows, so the like
 count can always be recomputed from the reactions rather than incremented.
+This file is setup and stand-ins only; the operations each stage is about live in that stage's own file.
 """
 
 import os
@@ -50,25 +51,6 @@ def reset() -> None:
 
 def like_count(conn: sqlite3.Connection, video: str = VIDEO) -> int:
     return conn.execute("SELECT like_count FROM videos WHERE id = ?", (video,)).fetchone()[0]
-
-
-def set_reaction(conn: sqlite3.Connection, user: str, video: str, reaction: str = "LIKE") -> None:
-    """Store the reaction as state. Doing this twice leaves the same row."""
-    conn.execute(
-        "INSERT INTO reactions VALUES (?, ?, ?) "
-        "ON CONFLICT (user, video) DO UPDATE SET reaction = excluded.reaction",
-        (user, video, reaction),
-    )
-
-
-def recompute_like_count(conn: sqlite3.Connection, video: str) -> int:
-    """SET the count from the reactions. Doing this twice gives the same count."""
-    conn.execute(
-        "UPDATE videos SET like_count = "
-        "(SELECT COUNT(*) FROM reactions WHERE video = ? AND reaction = 'LIKE') WHERE id = ?",
-        (video, video),
-    )
-    return like_count(conn, video)
 
 
 def send_notification(event_id: str, video: str, user: str) -> bool:

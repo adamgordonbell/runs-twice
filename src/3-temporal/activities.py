@@ -20,10 +20,14 @@ def update_like_count(video: str) -> int:
         if os.environ.get("COUNT_MODE") == "add":
             # Not safe to repeat: a retry after the crash below counts the like twice.
             conn.execute("UPDATE videos SET like_count = like_count + 1 WHERE id = ?", (video,))
-            count = db.like_count(conn, video)
         else:
             # Safe to repeat: SET the count from the reactions.
-            count = db.recompute_like_count(conn, video)
+            conn.execute(
+                "UPDATE videos SET like_count = "
+                "(SELECT COUNT(*) FROM reactions WHERE video = ? AND reaction = 'LIKE') WHERE id = ?",
+                (video, video),
+            )
+        count = db.like_count(conn, video)
     chaos.crash_point("after-count-commit")  # committed, but Temporal hasn't heard
     activity.logger.info(f"like count for {video}: {count}")
     return count

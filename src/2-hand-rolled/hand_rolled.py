@@ -34,7 +34,11 @@ def handle_like(conn: sqlite3.Connection, user: str, video: str) -> None:
     """Request handler. The event ID comes from the like itself, so a retried request finds the same event."""
     event_id = f"like-{user}-{video}"
     with conn:
-        db.set_reaction(conn, user, video)
+        conn.execute(
+            "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
+            "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE'",
+            (user, video),
+        )
         conn.execute(
             "INSERT INTO like_events (event_id, user, video) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
             (event_id, user, video),
@@ -53,8 +57,13 @@ def mark_done(conn: sqlite3.Connection, event_id: str, step: str) -> None:
 def process(conn: sqlite3.Connection, event_id: str, user: str, video: str) -> None:
     if not step_done(conn, event_id, "count"):
         with conn:  # the count and its checkmark commit together, so they can't disagree
-            count = db.recompute_like_count(conn, video)
+            conn.execute(
+                "UPDATE videos SET like_count = "
+                "(SELECT COUNT(*) FROM reactions WHERE video = ? AND reaction = 'LIKE') WHERE id = ?",
+                (video, video),
+            )
             mark_done(conn, event_id, "count")
+        count = db.like_count(conn, video)
         print(f"  count updated: {count}")
 
     if not step_done(conn, event_id, "notify"):

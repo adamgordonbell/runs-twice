@@ -2,7 +2,7 @@
 
 It stores the reaction, then starts a workflow for the downstream work. Both
 steps are safe to repeat, so the client can retry the whole request:
-set_reaction leaves the same row, and the workflow ID comes from the like, so a
+storing the reaction leaves the same row, and the workflow ID comes from the like, so a
 second start finds the first workflow instead of creating another.
 
     uv run starter.py            # Alice likes the video
@@ -22,8 +22,12 @@ from workflows import LikeWorkflow
 
 
 async def handle_like(client: Client, event: LikeEvent) -> None:
-    with db.connect() as conn:
-        db.set_reaction(conn, event.user, event.video)
+    with db.connect() as conn:  # safe to repeat: the same row either way
+        conn.execute(
+            "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
+            "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE'",
+            (event.user, event.video),
+        )
     try:
         await client.start_workflow(
             LikeWorkflow.run,

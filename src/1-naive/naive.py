@@ -18,8 +18,16 @@ def like_add(conn: sqlite3.Connection, user: str, video: str) -> None:
 def like_set(conn: sqlite3.Connection, user: str, video: str) -> None:
     """The fix: a like is state, (Alice, video-123) = LIKE, and the count follows from it."""
     with conn:
-        db.set_reaction(conn, user, video)
-        db.recompute_like_count(conn, video)
+        conn.execute(
+            "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
+            "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE'",
+            (user, video),
+        )
+        conn.execute(
+            "UPDATE videos SET like_count = "
+            "(SELECT COUNT(*) FROM reactions WHERE video = ? AND reaction = 'LIKE') WHERE id = ?",
+            (video, video),
+        )
 
 
 def click_like(handler, conn: sqlite3.Connection) -> None:

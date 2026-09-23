@@ -41,7 +41,7 @@ uv run starter.py --retry                  # 3: Alice likes the video; the clien
 
 ## Crash it
 
-In `src/3-temporal`, `CRASH_AT=<point>` makes the worker exit hard the first time it reaches that point, as a killed machine would. Start a second `uv run worker.py` (without `CRASH_AT`) and it picks up the work.
+In `src/3-temporal`, `CRASH_AT=<point>` makes the worker exit hard the first time it reaches that point, as a killed machine would. Then start a second worker with the same command minus `CRASH_AT` (keep `COUNT_MODE` if you set it) and it picks up the work.
 
 | Command in terminal 2 | What happens |
 |---|---|
