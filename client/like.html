@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- The same page for every stage: served at / by each stage's server. It retries like client.py. -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>video-123</title>
+  <style>
+    body { font: 18px system-ui, sans-serif; background: #111; color: #eee; max-width: 520px; margin: 60px auto; }
+    button { font-size: 22px; padding: 10px 22px; border-radius: 999px; border: 2px solid #60a5fa; background: #1e293b; color: #eee; cursor: pointer; }
+    #likes { font-size: 42px; margin: 18px 0 6px; }
+    #log { color: #9ca3af; font-size: 14px; min-height: 60px; white-space: pre-line; }
+    li { color: #fb923c; }
+  </style>
+</head>
+<body>
+  <h2>video-123</h2>
+  <label><input type="checkbox" id="lose"> lose the first response</label>
+  <p><button id="like">👍 Like</button></p>
+  <div id="likes">…</div>likes
+  <div id="log"></div>
+  <h3>Creator's notifications</h3>
+  <ul id="notes"></ul>
+<script>
+const log = (m) => document.getElementById('log').textContent += m + '\n';
+
+async function refresh() {
+  const state = await (await fetch('/videos/video-123')).json();
+  document.getElementById('likes').textContent = state.likes;
+  document.getElementById('notes').innerHTML = state.notifications.map((m) => `<li>📬 ${m}</li>`).join('');
+}
+
+document.getElementById('like').onclick = async () => {
+  document.getElementById('log').textContent = '';
+  const lose = document.getElementById('lose').checked;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    log(`POST /like  attempt ${attempt}`);
+    try {
+      const reply = await fetch('/like', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: 'alice', video: 'video-123' }),
+      });
+      if (lose && attempt === 1) throw new Error('the response was lost on the way back');
+      log(`  ${JSON.stringify(await reply.json())}`);
+      return;
+    } catch (e) {
+      log(`  no response (${e.message}), retrying`);
+      await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000)));
+    }
+  }
+};
+
+refresh(); setInterval(() => refresh().catch(() => {}), 1000);
+</script>
+</body>
+</html>

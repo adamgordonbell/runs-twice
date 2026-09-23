@@ -1,4 +1,4 @@
-"""Types shared by the workflow, activities, worker and starter.
+"""Types shared by the server, workflow, activities and worker.
 
 Imported into the workflow sandbox, so keep it free of I/O and environment reads.
 """

@@ -3,16 +3,19 @@
 import pytest
 
 import db
-import like
+from server import handle_like
 
 
 @pytest.fixture(autouse=True)
 def fresh_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "likes.db")
+    monkeypatch.setattr(db, "NOTIFY_DB_PATH", tmp_path / "notifications.db")
     db.reset()
 
 
-def test_run_twice_counts_twice():
+def test_retry_counts_twice_and_notifies_twice():
+    handle_like("alice", db.VIDEO)
+    handle_like("alice", db.VIDEO)
     with db.connect() as conn:
-        like.click_like(conn)
         assert db.like_count(conn) == 1206
+    assert len(db.notifications()) == 2

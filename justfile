@@ -1,33 +1,43 @@
-# What happens if this runs twice? Each stage is standalone in src/.
+# What happens if this runs twice? Each stage in src/ is a complete server; the client is shared.
+# Every stage serves the same API on :8000, so run one stage at a time.
 
-# stage 1: a like is +1, and the retry counts it twice
+# the client: `just click`, `just click --lose-first-response`, `just click --user bob`, `just click --show`
+click *ARGS:
+    uv run client/client.py {{ARGS}}
+
+# stage 1: a like is +1
 add:
-    cd src/1-add && uv run like.py
+    cd src/1-add && uv run server.py --reset
 
-# stage 2: a like is state, and the retry is harmless
-set:
-    cd src/2-set && uv run like.py
+# stage 2: a like is state. `CRASH_AT=after-commit just set` to lose the notification
+set *ARGS:
+    cd src/2-set && uv run server.py {{ARGS}}
 
-# stage 3: the downstream work, made safe by hand. e.g. `CRASH_AT=after-notify just hand-rolled`, then `just hand-rolled --process`
-hand-rolled *ARGS:
-    cd src/3-hand-rolled && uv run hand_rolled.py {{ARGS}}
+# stage 3: server + hand-rolled orchestrator. Start the server first, then one or more workers
+hand-rolled-server *ARGS:
+    cd src/3-hand-rolled && uv run server.py {{ARGS}}
 
-# stage 4, terminal 1: Temporal server + Web UI at http://localhost:8233
+# stage 3 worker. Env: CRASH_AT=before-notify|after-count-commit, COUNT_MODE=add
+hand-rolled-worker:
+    cd src/3-hand-rolled && uv run worker.py
+
+# stage 3: list the orchestrator's jobs
+jobs:
+    cd src/3-hand-rolled && uv run orchestrator.py
+
+# stage 4: Temporal server + Web UI at http://localhost:8233
 dev-server:
     temporal server start-dev --ui-port 8233
 
-# stage 4, terminal 2: worker. Env: CRASH_AT=before-notify|after-count-commit, COUNT_MODE=add (the unsafe activity)
-worker:
+temporal-server *ARGS:
+    cd src/4-temporal && uv run server.py {{ARGS}}
+
+# stage 4 worker. Env: CRASH_AT=before-notify|after-count-commit, COUNT_MODE=add
+temporal-worker:
     cd src/4-temporal && uv run worker.py
-
-# stage 4, terminal 3: e.g. `just like`, `just like --retry`, `just like --user bob`
-like *ARGS:
-    cd src/4-temporal && uv run starter.py {{ARGS}}
-
-reset:
-    cd src/4-temporal && uv run reset.py
 
 test:
     cd src/1-add && uv run pytest -q
     cd src/2-set && uv run pytest -q
+    cd src/3-hand-rolled && uv run pytest -q
     cd src/4-temporal && uv run pytest -q

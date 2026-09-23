@@ -11,6 +11,7 @@ from shared import LikeEvent
 @pytest.fixture(autouse=True)
 def fresh_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "likes.db")
+    monkeypatch.setattr(db, "NOTIFY_DB_PATH", tmp_path / "notifications.db")
     db.reset()
 
 
@@ -27,5 +28,4 @@ def test_notify_creator_twice():
     event = LikeEvent(user="alice", video=db.VIDEO)
     assert env.run(notify_creator, event) is True
     assert env.run(notify_creator, event) is False
-    with db.connect() as conn:
-        assert db.notification_count(conn) == 1
+    assert len(db.notifications()) == 1

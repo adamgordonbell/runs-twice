@@ -37,6 +37,6 @@ def update_like_count(video: str) -> int:
 def notify_creator(event: LikeEvent) -> bool:
     chaos.crash_point("before-notify")
     # The stable event ID lets the notification service drop a repeat.
-    sent = db.send_notification(event.event_id, event.video, event.user)
+    sent = db.send_notification(event.video, event.user, idempotency_key=event.event_id)
     activity.logger.info("creator notified" if sent else "repeat notification, ignored")
     return sent

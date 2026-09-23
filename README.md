@@ -1,58 +1,80 @@
 # What happens if this runs twice?
 
-Idempotency, without and with Temporal, as three small Python programs. Alice clicks Like once. The server does the work, the response is lost, and the client retries. Each stage asks the same question: what happens if this runs twice?
+Idempotency, without and with Temporal. Alice clicks Like once. The server records the like, updates the video's like count and notifies the creator. The response is lost, so the client retries. Every stage below does that same job; what changes is how reliably.
+
+Each folder in `src/` is a complete, standalone server with the same API (`POST /like`, `GET /videos/{id}`). The client in `client/` never changes: retrying is the client's job, and making the retry safe is the server's.
 
 ## The stages
 
-Each folder under `src/` stands alone: its own copy of `db.py`, runnable on its own. Read them in order.
-
-| Folder | Lines | What it adds |
+| Folder | What it does | But… |
 |---|---|---|
-| `src/1-add` | 30 | A like is `+1`. The response is lost, the client retries, and one click counts twice: 1204 → 1206. |
-| `src/2-set` | 40 | A like is state, `(alice, video-123) = LIKE`, and the count is `SET` from the reactions. The retry finds the same row and computes the same count: 1205. |
-| `src/3-hand-rolled` | 97 | The like causes more work: update the count, notify the creator. Made safe to retry by hand with a stable event ID, a table of finished steps, one transaction for the count and its checkmark, and five TODOs (leases, dead-worker recovery, retries, timeouts, visibility) that add up to a workflow engine. |
-| `src/4-temporal` | 25 + 38 | The same two steps as a workflow (`workflows.py`) and two activities (`activities.py`). Temporal records each finished step, retries failures and resumes on another worker. The activities still have to be safe to run twice. `worker.py` and `starter.py` are the plumbing. |
+| `src/1-add` | A like is `+1`, then a notification. The retry counts the like twice and notifies twice: **1206 likes, 2 notifications.** | The server can't tell a retry from a new click. |
+| `src/2-set` | **Therefore** a like is state, `(alice, video-123) = LIKE`, and the count is `SET` from the reactions. It notifies only when the reaction changed. The retry changes nothing: **1205, 1 notification.** | The database and the notification service are two systems. Crash between them and the retry sees nothing to change: **1205, 0 notifications.** The creator is never told. |
+| `src/3-hand-rolled` | **Therefore** the request stores the like and queues a job in one transaction, and a worker runs the job as a workflow: update the count, then notify. The generic machinery is its own file, `orchestrator.py`: queue, leases, dead-worker takeover, step history, retries with backoff, fencing. | That's a workflow engine, and it's still missing timers, signals, versioning, a UI and scale. And a worker can still die after a step's side effect and before it's recorded. |
+| `src/4-temporal` | **Therefore** delete `orchestrator.py` and let Temporal be the orchestrator. The workflow and activities barely change. | Temporal can't see inside an activity either. **Therefore** activities must still be safe to run twice. |
 
-Useful diffs:
+Idempotency makes retries safe. Temporal makes them manageable.
+
+### From stage 3 to stage 4
+
+| Stage 3, by hand | Stage 4, Temporal |
+|---|---|
+| `server.py` stores the like and calls `orchestrator.enqueue` | `server.py` stores the like and calls `start_workflow` |
+| job ID from the like | workflow ID from the like |
+| `workflows.py`: `ctx.step(...)` | `workflows.py`: `workflow.execute_activity(...)` |
+| `activities.py` | `activities.py`, plus `@activity.defn` |
+| `orchestrator.py`: queue, leases, step history, retries | The Temporal Service, and the SDK's replay |
 
 ```bash
-diff src/1-add/like.py src/2-set/like.py         # +1 becomes state: the whole fix for the click itself
-diff src/2-set/db.py src/3-hand-rolled/db.py     # the notification service, which drops a repeated event ID
-cat src/3-hand-rolled/hand_rolled.py             # the downstream work, by hand
-cat src/4-temporal/workflows.py                  # the same steps, with Temporal
+diff src/1-add/server.py src/2-set/server.py                 # +1 becomes state
+diff src/3-hand-rolled/workflows.py src/4-temporal/workflows.py
+diff src/3-hand-rolled/activities.py src/4-temporal/activities.py
+cat src/3-hand-rolled/orchestrator.py                         # the file stage 4 deletes
 ```
 
 ## Run it
 
-Needs [uv](https://docs.astral.sh/uv/), the [Temporal CLI](https://docs.temporal.io/cli) and optionally [just](https://github.com/casey/just) (each recipe is one command; see `justfile`).
+Needs [uv](https://docs.astral.sh/uv/), the [Temporal CLI](https://docs.temporal.io/cli) for stage 4, and optionally [just](https://github.com/casey/just) (see `justfile` for the one-line equivalents). All stages listen on port 8000, so run one at a time. `--reset` puts the video back to 1204 likes; start workers after it, since it replaces the database file.
 
 ```bash
-cd src/1-add && uv run like.py
-cd src/2-set && uv run like.py
-cd src/3-hand-rolled && uv run hand_rolled.py
+cd src/1-add && uv run server.py --reset                       # or src/2-set
+uv run client/client.py --lose-first-response                  # from the repo root, in a second terminal
 ```
 
-The Temporal stage uses three terminals, all in `src/4-temporal`:
+Or open http://localhost:8000 for a Like button that retries the same way.
+
+Stage 3:
 
 ```bash
-temporal server start-dev --ui-port 8233   # 1: server, UI at http://localhost:8233
-uv run worker.py                           # 2: worker
-uv run starter.py --retry                  # 3: Alice likes the video; the client sends the request twice
+cd src/3-hand-rolled
+uv run server.py --reset          # terminal 1
+uv run worker.py                  # terminal 2; start two to watch them share the queue
+uv run orchestrator.py            # list the jobs
 ```
 
-`uv run reset.py` puts the video back to 1204 likes. The workflow ID comes from the like (`like-alice-video-123`), so a second like from the same user is refused as a duplicate even after a reset. Use `--user bob` for a fresh run, or restart the dev server.
+Stage 4:
+
+```bash
+temporal server start-dev --ui-port 8233   # terminal 1, UI at http://localhost:8233
+cd src/4-temporal
+uv run server.py --reset                   # terminal 2
+uv run worker.py                           # terminal 3
+```
+
+In both, `uv run client/client.py --lose-first-response --wait 2` from the repo root likes the video and prints the result once the worker has run. The workflow ID comes from the like (`like-alice-video-123`), so after a reset use `--user bob`, or restart the Temporal dev server.
 
 ## Crash it
 
-In `src/4-temporal`, `CRASH_AT=<point>` makes the worker exit hard the first time it reaches that point, as a killed machine would. Then start a second worker with the same command minus `CRASH_AT` (keep `COUNT_MODE` if you set it) and it picks up the work.
+`CRASH_AT=<point>` makes the process exit hard the first time it reaches that point, as a killed machine would. Restart it without `CRASH_AT` (keep `COUNT_MODE` if you set it) and the client's retry, or the next worker, carries on.
 
-| Command in terminal 2 | What happens |
-|---|---|
-| `CRASH_AT=before-notify uv run worker.py` | The worker dies between the two steps. The new worker runs `notify_creator` only: Temporal already recorded that `update_like_count` finished. |
-| `COUNT_MODE=add CRASH_AT=after-count-commit uv run worker.py` | The count update commits, then the worker dies before Temporal hears about it. Temporal retries the activity (attempt 2) and the `+1` runs again: 1206 likes. |
-| `CRASH_AT=after-count-commit uv run worker.py` | Same crash, but the activity `SET`s the count from the reactions: the retry leaves 1205. |
+| Where | Command | Stage 2 | Stage 3 | Stage 4 |
+|---|---|---|---|---|
+| Server, after saving the like | `CRASH_AT=after-commit uv run server.py --reset` | 0 notifications | 1 | 1 |
+| Worker, between the two steps | `CRASH_AT=before-notify uv run worker.py` | | The next worker takes the job when the lease runs out and skips the count | The next worker runs only `notify_creator` |
+| Worker, after the count commits, `+1` | `COUNT_MODE=add CRASH_AT=after-count-commit uv run worker.py` | | 1206 | 1206 |
+| The same, with `SET` | `CRASH_AT=after-count-commit uv run worker.py` | | 1205 | 1205 |
 
-The last two rows are the point. Temporal remembers progress and retries for you, but it can't know whether an activity's side effect landed before the worker died. So each activity must be safe to run twice: `SET` a result rather than add to it, or pass a stable ID the other system can use to recognize a repeat (as `notify_creator` does).
+The last two rows are the point. Any orchestrator, hand-rolled or Temporal, remembers progress and retries for you, but it can't know whether a step's side effect landed before the worker died. So each step must be safe to run twice: `SET` a result rather than add to it, or pass a stable ID the other system can use to recognize a repeat, as `notify_creator` does.
 
 ## What Temporal gives you, and what you still add
 
@@ -60,13 +82,13 @@ The last two rows are the point. Temporal remembers progress and retries for you
 |---|---|
 | A durable record of which steps finished | Activities that are safe to repeat |
 | Retries with backoff, and timeouts | A stable ID for the work (here, the workflow ID) |
-| Resuming on another worker after a crash | An idempotency key for systems outside your database |
-| At most one running workflow per ID | |
+| Taking over from a dead worker | An idempotency key for systems outside your database |
+| At most one workflow per ID | |
 
 ## Tests
 
 ```bash
-just test   # or run `uv run pytest -q` in src/1-add, src/2-set and src/4-temporal
+just test   # or `uv run pytest -q` in each src/ folder
 ```
 
-Each test runs an operation twice and checks the result, including the two activities under Temporal's `ActivityEnvironment`.
+Each test runs something twice, or kills it halfway, and checks the result.
