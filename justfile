@@ -13,17 +13,13 @@ add:
 set *ARGS:
     cd src/2-set && uv run server.py {{ARGS}}
 
-# stage 3: server + hand-rolled orchestrator. Start the server first, then one or more workers
+# stage 3: server + one worker. Start the server first
 hand-rolled-server *ARGS:
     cd src/3-hand-rolled && uv run server.py {{ARGS}}
 
-# stage 3 worker. Env: CRASH_AT=before-notify|after-count-commit, COUNT_MODE=add
+# stage 3 worker. Env: CRASH_AT=before-notify|after-notify
 hand-rolled-worker:
     cd src/3-hand-rolled && uv run worker.py
-
-# stage 3: list the orchestrator's jobs
-jobs:
-    cd src/3-hand-rolled && uv run orchestrator.py
 
 # stage 4: Temporal server + Web UI at http://localhost:8233
 dev-server:

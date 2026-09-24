@@ -1,16 +1,17 @@
-"""Stage 3: the like's consequences run as a workflow, on an orchestrator we wrote.
+"""Stage 3: the request records the like and an event; a worker does the rest.
 
-The request stores the reaction and queues a job in one transaction, so the job
-exists if and only if the like does. A worker runs the job: update the count,
-then notify the creator. See orchestrator.py for what that takes.
+The like and its event commit in one transaction, so the event exists if and
+only if the like does. A crash after the commit loses nothing: the worker will
+find the event. The event ID comes from the like, so a retried request finds the
+same event instead of adding another.
 
     uv run server.py --reset                                   # terminal 1
-    uv run worker.py                                           # terminal 2 (run two, if you like)
+    uv run worker.py                                           # terminal 2
     uv run ../../client/client.py --lose-first-response --wait 2   # terminal 3
 """
 
+import sqlite3
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 import uvicorn
@@ -20,8 +21,27 @@ from pydantic import BaseModel
 
 import chaos
 import db
-import orchestrator
-from shared import LikeEvent
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS like_events (
+    id    TEXT PRIMARY KEY,
+    user  TEXT NOT NULL,
+    video TEXT NOT NULL,
+    done  INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS steps_done (
+    event_id TEXT NOT NULL,
+    step     TEXT NOT NULL,
+    PRIMARY KEY (event_id, step)
+);
+"""
+
+
+def connect() -> sqlite3.Connection:
+    conn = db.connect()
+    conn.executescript(SCHEMA)
+    return conn
+
 
 app = FastAPI()
 
@@ -32,16 +52,19 @@ class Like(BaseModel):
 
 
 def handle_like(user: str, video: str) -> str:
-    event = LikeEvent(user, video)
-    with orchestrator.connect() as conn:
+    event_id = f"like-{user}-{video}"
+    with connect() as conn:
         conn.execute(
             "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
             "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE'",
             (user, video),
         )
-        orchestrator.enqueue(conn, event.event_id, "like", asdict(event))
-    chaos.crash_point("after-commit")  # harmless here: the like and its job committed together
-    return event.event_id
+        conn.execute(
+            "INSERT INTO like_events (id, user, video) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING",
+            (event_id, user, video),
+        )
+    chaos.crash_point("after-commit")  # harmless here: the like and its event committed together
+    return event_id
 
 
 @app.post("/like")
