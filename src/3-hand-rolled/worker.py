@@ -4,8 +4,7 @@ Two lines of business logic, wrapped in the bookkeeping that makes them safe to
 retry: a checkmark per finished step, so a rerun skips what's done.
 
     uv run worker.py
-    CRASH_AT=before-notify uv run worker.py    # dies between the steps; run it again to resume
-    CRASH_AT=after-notify uv run worker.py     # dies after sending; the rerun's repeat is ignored
+    FAIL_RATE=0.5 uv run worker.py    # steps fail at random; each pass skips what's done
 """
 
 import os
@@ -39,12 +38,12 @@ def process(conn: sqlite3.Connection, event_id: str, user: str, video: str) -> N
         print(f"  count updated: {db.like_count(conn, video)}", flush=True)
 
     if not step_done(conn, event_id, "notify"):
-        chaos.crash_point("before-notify")
+        chaos.maybe_fail("before-notify")
         # The notification service is another system, so this can't share our transaction.
         # A crash after sending and before the checkmark sends again on the rerun, which is
         # only safe because the service drops a repeated idempotency key.
         sent = db.send_notification(video, user, idempotency_key=event_id)
-        chaos.crash_point("after-notify")
+        chaos.maybe_fail("after-notify")
         with conn:
             mark_done(conn, event_id, "notify")
         print("  creator notified" if sent else "  repeat notification, ignored", flush=True)
@@ -70,7 +69,7 @@ def run(conn: sqlite3.Connection) -> None:
 
 
 if __name__ == "__main__":
-    print(f"worker starting. CRASH_AT={os.environ.get('CRASH_AT', '')!r}", flush=True)
+    print(f"worker starting. FAIL_RATE={chaos.FAIL_RATE}", flush=True)
     # Ctrl-C kills the worker outright, like a crash, instead of shutting down cleanly.
     signal.signal(signal.SIGINT, lambda *_: os._exit(130))
     run(connect())

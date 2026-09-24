@@ -52,12 +52,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 def reset() -> None:
-    """Fresh databases at 1204 likes, and no crash markers (see chaos.py)."""
+    """Fresh databases at 1204 likes."""
     for path in (DB_PATH, NOTIFY_DB_PATH):
         for suffix in ("", "-wal", "-shm"):
             Path(f"{path}{suffix}").unlink(missing_ok=True)
-    for marker in (DB_PATH.parent / "crash-markers").glob("*"):
-        marker.unlink()
     with connect() as conn:
         conn.execute("INSERT INTO videos VALUES (?, ?)", (VIDEO, SEED_LIKES))
         conn.executemany(
@@ -68,6 +66,11 @@ def reset() -> None:
 
 def like_count(conn: sqlite3.Connection, video: str = VIDEO) -> int:
     return conn.execute("SELECT like_count FROM videos WHERE id = ?", (video,)).fetchone()[0]
+
+
+def has_liked(conn: sqlite3.Connection, user: str, video: str = VIDEO) -> bool:
+    row = conn.execute("SELECT reaction FROM reactions WHERE user = ? AND video = ?", (user, video)).fetchone()
+    return row is not None and row[0] == "LIKE"
 
 
 def send_notification(video: str, user: str, idempotency_key: str | None = None) -> bool:

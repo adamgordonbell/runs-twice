@@ -3,8 +3,9 @@
 import pytest
 from temporalio.testing import ActivityEnvironment
 
+import chaos
 import db
-from activities import notify_creator, update_like_count
+from activities import notify_creator, record_reaction, update_like_count
 from shared import LikeEvent
 
 
@@ -15,9 +16,18 @@ def fresh_db(tmp_path, monkeypatch):
     db.reset()
 
 
-def test_update_like_count_twice():
+def test_record_reaction_twice():
+    env = ActivityEnvironment()
+    event = LikeEvent(user="alice", video=db.VIDEO)
+    env.run(record_reaction, event)
+    env.run(record_reaction, event)
     with db.connect() as conn:
-        conn.execute("INSERT INTO reactions VALUES ('alice', ?, 'LIKE')", (db.VIDEO,))
+        assert db.has_liked(conn, "alice")
+        assert conn.execute("SELECT COUNT(*) FROM reactions WHERE user = 'alice'").fetchone()[0] == 1
+
+
+def test_update_like_count_twice():
+    ActivityEnvironment().run(record_reaction, LikeEvent(user="alice", video=db.VIDEO))
     env = ActivityEnvironment()
     assert env.run(update_like_count, db.VIDEO) == 1205
     assert env.run(update_like_count, db.VIDEO) == 1205
@@ -29,3 +39,15 @@ def test_notify_creator_twice():
     assert env.run(notify_creator, event) is True
     assert env.run(notify_creator, event) is False
     assert len(db.notifications()) == 1
+
+
+def test_add_counts_twice_when_the_activity_fails_after_commit(monkeypatch):
+    """The edge case: the side effect landed, Temporal didn't hear, so it runs the activity again."""
+    monkeypatch.setenv("COUNT_MODE", "add")
+    env = ActivityEnvironment()
+    chaos.fail_once("after-count-commit")
+    with pytest.raises(chaos.InjectedFailure):
+        env.run(update_like_count, db.VIDEO)
+    env.run(update_like_count, db.VIDEO)  # Temporal's retry
+    with db.connect() as conn:
+        assert db.like_count(conn) == 1206

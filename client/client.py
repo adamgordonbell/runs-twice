@@ -36,10 +36,11 @@ def post_like(url: str, user: str, video: str, lose_first_response: bool) -> Non
     print("gave up")
 
 
-def show(url: str, video: str) -> None:
-    with urllib.request.urlopen(f"{url}/videos/{video}", timeout=TIMEOUT) as response:
+def show(url: str, user: str, video: str) -> None:
+    with urllib.request.urlopen(f"{url}/videos/{video}?user={user}", timeout=TIMEOUT) as response:
         state = json.load(response)
-    print(f"{state['likes']} likes, {len(state['notifications'])} notification(s)")
+    liked = "liked" if state["liked"] else "not liked"
+    print(f"{state['likes']} likes, {len(state['notifications'])} notification(s), {user}: {liked}")
     for message in state["notifications"]:
         print(f"  📬 {message}")
 
@@ -56,4 +57,4 @@ if __name__ == "__main__":
     if not args.show:
         post_like(args.url, args.user, args.video, args.lose_first_response)
         time.sleep(args.wait)
-    show(args.url, args.video)
+    show(args.url, args.user, args.video)

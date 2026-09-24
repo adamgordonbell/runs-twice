@@ -15,6 +15,18 @@ from shared import LikeEvent
 
 
 @activity.defn
+def record_reaction(event: LikeEvent) -> None:
+    # Safe to repeat: the same row either way.
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
+            "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE'",
+            (event.user, event.video),
+        )
+    activity.logger.info(f"{event.user} likes {event.video}")
+
+
+@activity.defn
 def update_like_count(video: str) -> int:
     with db.connect() as conn:
         if os.environ.get("COUNT_MODE") == "add":
@@ -28,15 +40,15 @@ def update_like_count(video: str) -> int:
                 (video, video),
             )
         count = db.like_count(conn, video)
-    chaos.crash_point("after-count-commit")  # committed, but Temporal hasn't heard
+    chaos.maybe_fail("after-count-commit")  # committed, but Temporal hasn't heard
     activity.logger.info(f"like count for {video}: {count}")
     return count
 
 
 @activity.defn
 def notify_creator(event: LikeEvent) -> bool:
-    chaos.crash_point("before-notify")
     # The stable event ID lets the notification service drop a repeat.
     sent = db.send_notification(event.video, event.user, idempotency_key=event.event_id)
+    chaos.maybe_fail("after-notify")  # sent, but Temporal hasn't heard
     activity.logger.info("creator notified" if sent else "repeat notification, ignored")
     return sent

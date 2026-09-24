@@ -2,8 +2,8 @@
 
 import pytest
 
+import chaos
 import db
-import server
 from server import handle_like
 
 
@@ -22,16 +22,9 @@ def test_retry_counts_once_and_notifies_once():
     assert len(db.notifications()) == 1
 
 
-def test_crash_after_commit_loses_the_notification(monkeypatch):
-    crashes = ["after-commit"]  # crash the first request only, like CRASH_AT
-
-    def crash_point(name):
-        if name in crashes:
-            crashes.remove(name)
-            raise SystemExit(name)
-
-    monkeypatch.setattr(server.chaos, "crash_point", crash_point)
-    with pytest.raises(SystemExit):
+def test_failure_after_commit_loses_the_notification():
+    chaos.fail_once("after-commit")
+    with pytest.raises(chaos.InjectedFailure):
         handle_like("alice", db.VIDEO)
     handle_like("alice", db.VIDEO)  # the client's retry
     with db.connect() as conn:

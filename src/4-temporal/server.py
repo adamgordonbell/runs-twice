@@ -1,9 +1,9 @@
-"""Stage 4: the like's consequences run as a Temporal workflow.
+"""Stage 4: a like is a Temporal workflow.
 
-The request stores the reaction, then starts a workflow whose ID comes from the
-like. Both are safe to repeat, so the client can retry the whole request: the
-reaction is the same row, and a second start finds the first workflow. A crash
-between the two is covered too, because the retry starts the workflow anyway.
+The request does one thing: start a workflow whose ID comes from the like. The
+workflow records the reaction, updates the count and notifies the creator. With
+one write per request there is no gap between two systems to fall into, and a
+retried request finds the workflow the first one started.
 
     temporal server start-dev --ui-port 8233                   # terminal 1, UI at http://localhost:8233
     uv run server.py --reset                                   # terminal 2
@@ -23,7 +23,6 @@ from temporalio.client import Client
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
-import chaos
 import db
 from shared import TASK_QUEUE, LikeEvent
 from workflows import LikeWorkflow
@@ -44,13 +43,6 @@ class Like(BaseModel):
 
 async def handle_like(temporal: Client, user: str, video: str) -> str:
     event = LikeEvent(user, video)
-    with db.connect() as conn:
-        conn.execute(
-            "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
-            "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE'",
-            (user, video),
-        )
-    chaos.crash_point("after-commit")  # the like is saved, no workflow yet; the client's retry starts it
     try:
         await temporal.start_workflow(
             LikeWorkflow.run,
@@ -70,9 +62,13 @@ async def like(like: Like) -> dict:
 
 
 @app.get("/videos/{video}")
-def video_state(video: str) -> dict:
+def video_state(video: str, user: str = "alice") -> dict:
     with db.connect() as conn:
-        return {"likes": db.like_count(conn, video), "notifications": db.notifications(video)}
+        return {
+            "likes": db.like_count(conn, video),
+            "liked": db.has_liked(conn, user, video),
+            "notifications": db.notifications(video),
+        }
 
 
 @app.get("/")

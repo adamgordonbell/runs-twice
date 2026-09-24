@@ -9,7 +9,7 @@ click *ARGS:
 add:
     cd src/1-add && uv run server.py --reset
 
-# stage 2: a like is state. `CRASH_AT=after-commit just set` to lose the notification
+# stage 2: a like is state. `FAIL_RATE=1 just set` to lose the notification
 set *ARGS:
     cd src/2-set && uv run server.py {{ARGS}}
 
@@ -17,7 +17,7 @@ set *ARGS:
 hand-rolled-server *ARGS:
     cd src/3-hand-rolled && uv run server.py {{ARGS}}
 
-# stage 3 worker. Env: CRASH_AT=before-notify|after-notify
+# stage 3 worker. Env: FAIL_RATE=0.5
 hand-rolled-worker:
     cd src/3-hand-rolled && uv run worker.py
 
@@ -28,7 +28,7 @@ dev-server:
 temporal-server *ARGS:
     cd src/4-temporal && uv run server.py {{ARGS}}
 
-# stage 4 worker. Env: CRASH_AT=before-notify|after-count-commit, COUNT_MODE=add
+# stage 4 worker. Env: FAIL_RATE=0.5, COUNT_MODE=add
 temporal-worker:
     cd src/4-temporal && uv run worker.py
 

@@ -7,12 +7,11 @@ reaction actually changed, so a retry sends nothing new either.
     uv run server.py --reset                                   # terminal 1
     uv run ../../client/client.py --lose-first-response        # terminal 2: 1205 likes, 1 notification
 
-The gap: the database commit and the notification are two systems. Crash between them:
+The gap: the database commit and the notification are two systems. Fail between them:
 
-    CRASH_AT=after-commit uv run server.py --reset             # terminal 1
-    uv run ../../client/client.py                              # terminal 2: the server dies mid-request
-    uv run server.py                                           # terminal 1 again, while the client retries
-    # -> 1205 likes, 0 notifications. The retry saw nothing to change, so nobody told the creator.
+    FAIL_RATE=1 uv run server.py --reset                       # terminal 1: every request fails after the commit
+    uv run ../../client/client.py                              # terminal 2
+    # -> 1205 likes, 0 notifications. Each retry saw nothing to change, so nobody told the creator.
 """
 
 import sys
@@ -47,7 +46,7 @@ def handle_like(user: str, video: str) -> int:
             (video, video),
         )
         count = db.like_count(conn, video)
-    chaos.crash_point("after-commit")  # the like is saved; the notification isn't sent yet
+    chaos.maybe_fail("after-commit")  # the like is saved; the notification isn't sent yet
     if changed:
         db.send_notification(video, user)
     return count
@@ -59,9 +58,13 @@ def like(like: Like) -> dict:
 
 
 @app.get("/videos/{video}")
-def video_state(video: str) -> dict:
+def video_state(video: str, user: str = "alice") -> dict:
     with db.connect() as conn:
-        return {"likes": db.like_count(conn, video), "notifications": db.notifications(video)}
+        return {
+            "likes": db.like_count(conn, video),
+            "liked": db.has_liked(conn, user, video),
+            "notifications": db.notifications(video),
+        }
 
 
 @app.get("/")

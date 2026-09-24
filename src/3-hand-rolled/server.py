@@ -63,7 +63,7 @@ def handle_like(user: str, video: str) -> str:
             "INSERT INTO like_events (id, user, video) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING",
             (event_id, user, video),
         )
-    chaos.crash_point("after-commit")  # harmless here: the like and its event committed together
+    chaos.maybe_fail("after-commit")  # harmless here: the like and its event committed together
     return event_id
 
 
@@ -73,9 +73,13 @@ def like(like: Like) -> dict:
 
 
 @app.get("/videos/{video}")
-def video_state(video: str) -> dict:
+def video_state(video: str, user: str = "alice") -> dict:
     with db.connect() as conn:
-        return {"likes": db.like_count(conn, video), "notifications": db.notifications(video)}
+        return {
+            "likes": db.like_count(conn, video),
+            "liked": db.has_liked(conn, user, video),
+            "notifications": db.notifications(video),
+        }
 
 
 @app.get("/")

@@ -1,23 +1,29 @@
-"""Crash the process at a named point, once, to show what a retry does.
+"""Things fail. FAIL_RATE=0.3 makes each failure point raise 30% of the time.
 
-CRASH_AT=<point> makes the first run that reaches that point exit immediately,
-skipping every cleanup path, as a killed machine would. A marker file stops the
-next run crashing at the same place. `--reset` clears the markers.
+A failure point sits right after a side effect has landed (a commit, a sent
+notification) and before anyone has heard about it, which is exactly when a
+retry has to be safe. To kill a process outright instead, Ctrl-C a worker.
+
+Tests use fail_once(point) to make the next pass through a point fail.
 """
 
 import os
+import random
 
-import db
+FAIL_RATE = float(os.environ.get("FAIL_RATE", "0"))
+_fail_next: set[str] = set()
 
 
-def crash_point(name: str) -> None:
-    if os.environ.get("CRASH_AT") != name:
-        return
-    marker = db.DB_PATH.parent / "crash-markers" / name
-    if marker.exists():
-        return
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
-    print(f"💥 crashing at {name}", flush=True)
-    os._exit(1)
+class InjectedFailure(Exception):
+    pass
 
+
+def fail_once(point: str) -> None:
+    _fail_next.add(point)
+
+
+def maybe_fail(point: str) -> None:
+    if point in _fail_next or random.random() < FAIL_RATE:
+        _fail_next.discard(point)
+        print(f"💥 injected failure at {point}", flush=True)
+        raise InjectedFailure(point)

@@ -2,6 +2,7 @@
 
 import pytest
 
+import chaos
 import db
 import worker
 from server import connect, handle_like
@@ -20,20 +21,13 @@ def test_retried_request_records_one_event():
     assert connect().execute("SELECT id FROM like_events").fetchall() == [("like-alice-video-123",)]
 
 
-def test_crash_after_notify_then_rerun(monkeypatch):
-    crashes = ["after-notify"]  # crash the first run only, like CRASH_AT
-
-    def crash_point(name):
-        if name in crashes:
-            crashes.remove(name)
-            raise SystemExit(name)
-
-    monkeypatch.setattr(worker.chaos, "crash_point", crash_point)
+def test_failure_after_notify_then_rerun():
     event_id = handle_like("alice", db.VIDEO)
     conn = connect()
-    with pytest.raises(SystemExit):
+    chaos.fail_once("after-notify")
+    with pytest.raises(chaos.InjectedFailure):
         worker.process(conn, event_id, "alice", db.VIDEO)
-    worker.process(connect(), event_id, "alice", db.VIDEO)  # a fresh worker picks it up
+    worker.process(conn, event_id, "alice", db.VIDEO)  # the next pass
 
     assert db.like_count(conn) == 1205
     assert len(db.notifications()) == 1
