@@ -31,3 +31,25 @@ def test_failure_after_notify_then_rerun():
 
     assert db.like_count(conn) == 1205
     assert len(db.notifications()) == 1
+
+
+def test_fresh_claim_keeps_other_workers_off():
+    event_id = handle_like("alice", db.VIDEO)
+    conn = connect()
+    assert worker.claim(conn, event_id, now=1000)
+    assert not worker.claim(conn, event_id, now=1010)  # A is 10 s in: still A's
+
+
+def test_slow_worker_and_takeover_both_run():
+    event_id = handle_like("alice", db.VIDEO)
+    a, b = connect(), connect()
+    assert worker.claim(a, event_id, now=1000)
+    chaos.fail_once("after-notify")  # A sends, then stalls before ticking it off
+    with pytest.raises(chaos.InjectedFailure):
+        worker.process(a, event_id, "alice", db.VIDEO)
+
+    assert worker.claim(b, event_id, now=1031)  # 31 s of quiet: B takes over
+    worker.process(b, event_id, "alice", db.VIDEO)  # and sends again
+
+    assert db.like_count(a) == 1205
+    assert len(db.notifications()) == 1

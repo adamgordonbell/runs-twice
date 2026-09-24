@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS like_events (
     id    TEXT PRIMARY KEY,
     user  TEXT NOT NULL,
     video TEXT NOT NULL,
-    done  INTEGER NOT NULL DEFAULT 0
+    done  INTEGER NOT NULL DEFAULT 0,
+    claimed_at REAL  -- when a worker took it; NULL = nobody has
 );
 CREATE TABLE IF NOT EXISTS steps_done (
     event_id TEXT NOT NULL,

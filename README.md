@@ -10,8 +10,8 @@ Each folder in `src/` is a complete, standalone server with the same API (`POST 
 |---|---|---|
 | `src/1-add` | A like is `+1`, then a notification. The retry counts the like twice and notifies twice: **1206 likes, 2 notifications.** | The server can't tell a retry from a new click. |
 | `src/2-set` | **Therefore** a like is state, `(alice, video-123) = LIKE`, and the count is `SET` from the reactions. It notifies only when the reaction changed. The retry changes nothing: **1205, 1 notification.** | The database and the notification service are two systems. Crash between them and the retry sees nothing to change: **1205, 0 notifications.** The creator is never told. |
-| `src/3-hand-rolled` | **Therefore** the request stores the like and an event row in one transaction, and a worker does the rest: update the count, then notify. To make that safe to rerun, the worker keeps a checkmark per finished step and passes the event ID to the notification service as an idempotency key. Two lines of business logic, wrapped in bookkeeping. | Five TODOs remain: leases so two workers don't collide, taking over from a dead worker, retries with backoff, timeouts, and seeing what's stuck. The app is turning into a workflow engine. |
-| `src/4-temporal` | **Therefore** let Temporal do the bookkeeping and the five TODOs. The server only starts a workflow, with its ID taken from the like. Recording the like, updating the count and notifying become three activities, and the workflow is three lines. | Temporal can't see inside an activity either. **Therefore** activities must still be safe to run twice. |
+| `src/3-hand-rolled` | **Therefore** the request stores the like and an event row in one transaction, and a worker does the rest: update the count, then notify. To make that safe to rerun, the worker keeps a checkmark per finished step and passes the event ID to the notification service as an idempotency key. A worker claims an event before working on it; if it goes quiet for 30 s, another worker takes over. Two lines of business logic, wrapped in bookkeeping. | Quiet isn't dead: a slow worker and its replacement both run the step, so the steps must be idempotent anyway. And three TODOs remain: retries with backoff, timeouts on hung calls, and seeing what's stuck. The app is turning into a workflow engine. |
+| `src/4-temporal` | **Therefore** let Temporal do the bookkeeping, the takeover and the three TODOs. The server only starts a workflow, with its ID taken from the like. Recording the like, updating the count and notifying become three activities, and the workflow is three lines. | Temporal can't see inside an activity either. **Therefore** activities must still be safe to run twice. |
 
 Idempotency makes retries safe. Temporal makes them manageable.
 
@@ -23,7 +23,8 @@ Idempotency makes retries safe. Temporal makes them manageable.
 | event ID from the like, `ON CONFLICT DO NOTHING` | workflow ID from the like, `REJECT_DUPLICATE` |
 | `worker.py`: `step_done` / `mark_done` around each step | `workflows.py`: `execute_activity` for each step; Temporal records the history |
 | the steps, inline in `process()` | `activities.py` |
-| five TODOs | leases, takeover, retries, timeouts and the Web UI, built in |
+| `claim()` with a 30 s timeout | activity `start_to_close_timeout`; takeover is built in |
+| three TODOs | retries with backoff, timeouts and the Web UI, built in |
 
 ```bash
 diff src/1-add/server.py src/2-set/server.py     # +1 becomes state
@@ -49,6 +50,7 @@ Stage 3:
 cd src/3-hand-rolled
 uv run server.py --reset          # terminal 1
 uv run worker.py                  # terminal 2
+uv run worker.py                  # terminal 3, optional: they share the events
 ```
 
 Stage 4:
