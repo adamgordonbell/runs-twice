@@ -1,5 +1,7 @@
 """Setup and stand-ins, the same in every stage. SQLite stands in for Postgres.
 
+Both databases live in .data/<stage>/ at the repo root, out of the way of the code.
+
 - The app's database (likes.db): videos and reactions. A seeded video starts with
   1204 likes, stored as 1204 reaction rows, so the count can be SET from them.
 - The notification service (notifications.db): a separate system with its own
@@ -12,8 +14,9 @@ import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(os.environ.get("LIKES_DB", "likes.db"))
-NOTIFY_DB_PATH = Path(os.environ.get("NOTIFY_DB", "notifications.db"))
+DATA_DIR = Path(__file__).resolve().parents[2] / ".data" / Path(__file__).parent.name
+DB_PATH = Path(os.environ.get("LIKES_DB", DATA_DIR / "likes.db"))
+NOTIFY_DB_PATH = Path(os.environ.get("NOTIFY_DB", DATA_DIR / "notifications.db"))
 VIDEO = "video-123"
 SEED_LIKES = 1204
 
@@ -41,6 +44,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path or DB_PATH, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")  # a server and workers share the file
     conn.executescript(SCHEMA)
@@ -48,9 +52,12 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 def reset() -> None:
+    """Fresh databases at 1204 likes, and no crash markers (see chaos.py)."""
     for path in (DB_PATH, NOTIFY_DB_PATH):
         for suffix in ("", "-wal", "-shm"):
             Path(f"{path}{suffix}").unlink(missing_ok=True)
+    for marker in (DB_PATH.parent / "crash-markers").glob("*"):
+        marker.unlink()
     with connect() as conn:
         conn.execute("INSERT INTO videos VALUES (?, ?)", (VIDEO, SEED_LIKES))
         conn.executemany(
