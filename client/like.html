@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- Served at / by every stage. Updates optimistically on click, retries in the
+     background like client.py, and defers to the server once it confirms the like. -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>video-123</title>
+  <style>
+    body { font: 18px system-ui, sans-serif; background: #111; color: #eee; max-width: 520px; margin: 60px auto; }
+    button { font-size: 22px; padding: 10px 22px; border-radius: 999px; border: 2px solid #60a5fa; background: #1e293b; color: #eee; cursor: pointer; }
+    button.liked { background: #60a5fa; color: #111; }
+    #likes { font-size: 42px; margin: 18px 0 6px; }
+    #log { color: #9ca3af; font-size: 14px; min-height: 60px; white-space: pre-line; }
+    li { color: #fb923c; }
+  </style>
+</head>
+<body>
+  <h2>video-123</h2>
+  <label><input type="checkbox" id="lose"> lose the first response</label>
+  <p><button id="like">👍 Like</button></p>
+  <div id="likes">…</div>likes
+  <div id="log"></div>
+  <h3>Creator's notifications</h3>
+  <ul id="notes"></ul>
+<script>
+const USER = new URLSearchParams(location.search).get('user') || 'alice';
+const $ = (id) => document.getElementById(id);
+const log = (m) => $('log').textContent += m + '\n';
+let pending = null;  // { likes, until }: the optimistic view, until the server catches up
+
+function render(likes, liked) {
+  $('likes').textContent = likes;
+  $('like').textContent = liked ? '👍 Liked' : '👍 Like';
+  $('like').className = liked ? 'liked' : '';
+}
+
+async function refresh() {
+  const state = await (await fetch(`/videos/video-123?user=${USER}`)).json();
+  $('notes').innerHTML = state.notifications.map((m) => `<li>📬 ${m}</li>`).join('');
+  if (pending && !state.liked && Date.now() < pending.until) return render(pending.likes, true);
+  pending = null;
+  render(state.likes, state.liked);
+}
+
+async function sendLike() {
+  const lose = $('lose').checked;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    log(`POST /like  attempt ${attempt}`);
+    try {
+      const reply = await fetch('/like', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: USER, video: 'video-123' }),
+      });
+      if (lose && attempt === 1) throw new Error('the response was lost on the way back');
+      log(`  ${JSON.stringify(await reply.json())}`);
+      return;
+    } catch (e) {
+      log(`  no response (${e.message}), retrying`);
+      await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000)));
+    }
+  }
+  log('gave up');
+}
+
+$('like').onclick = () => {
+  if ($('like').className === 'liked') return;
+  $('log').textContent = '';
+  // Show the like now. Keep showing it while retries run, and for a few seconds
+  // after, so a worker that hasn't recorded it yet doesn't flip the button back.
+  pending = { likes: Number($('likes').textContent) + 1, until: Date.now() + 30000 };
+  render(pending.likes, true);
+  sendLike().then(() => { if (pending) pending.until = Date.now() + 5000; });
+};
+
+refresh(); setInterval(() => refresh().catch(() => {}), 1000);
+</script>
+</body>
+</html>
