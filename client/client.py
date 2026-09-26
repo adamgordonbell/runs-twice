@@ -1,9 +1,4 @@
-"""The client, the same for every stage: send a like, and retry if no response comes back.
-
-    uv run client/client.py                        # Alice likes the video
-    uv run client/client.py --lose-first-response  # the first response is lost on the way back
-    uv run client/client.py --show                 # just print the video's state
-"""
+"""Likes a video, retrying until a response comes back. The same client for every stage."""
 
 import argparse
 import json

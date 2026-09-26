@@ -1,9 +1,4 @@
-"""FAIL_RATE=0.3 makes each failure point raise 30% of the time.
-
-Failure points sit right after a side effect lands (a commit, a sent notification)
-and before anyone has heard about it, which is where a retry has to be safe.
-Tests use fail_once(point) to fail the next pass through a point.
-"""
+"""Injected crashes: FAIL_RATE=0.3 fails each point 30% of the time; tests use fail_once(point)."""
 
 import os
 import random

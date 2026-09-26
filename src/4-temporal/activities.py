@@ -1,8 +1,4 @@
-"""The steps that touch the outside world.
-
-A worker can die after an activity's side effect lands but before Temporal hears
-it finished. Temporal then runs the activity again, so each one has to be safe to run twice.
-"""
+"""The workflow's steps. Temporal may run any of them twice."""
 
 import os
 

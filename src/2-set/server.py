@@ -1,10 +1,4 @@
-"""Stage 2: a like is state, so running it twice is safe. But the commit and the
-notification are two systems; crash between them and the retry can't tell.
-
-    uv run server.py --reset                                   # terminal 1
-    uv run ../../client/client.py --lose-first-response        # terminal 2: 1205 likes, 1 notification
-    FAIL_RATE=1 uv run server.py --reset                       # every request fails after the commit: 1205, 0 notifications
-"""
+"""Stage 2: a like is a fact. The notification is a second system."""
 
 import sys
 from pathlib import Path

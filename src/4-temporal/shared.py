@@ -1,7 +1,4 @@
-"""Types shared by the server, workflow, activities and worker.
-
-Imported into the workflow sandbox, so keep it free of I/O and environment reads.
-"""
+"""Imported into the workflow sandbox, so no I/O here."""
 
 from dataclasses import dataclass
 
@@ -15,5 +12,5 @@ class LikeEvent:
 
     @property
     def event_id(self) -> str:
-        """Stable: the same like always has the same ID. Used as the workflow ID and the notification key."""
+        """The same like always gets the same ID: the workflow ID and the notification key."""
         return f"like-{self.user}-{self.video}"

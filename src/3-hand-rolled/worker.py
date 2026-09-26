@@ -1,9 +1,4 @@
-"""Stage 3 worker: update the count, then notify the creator, for each new like.
-
-    uv run worker.py
-    uv run worker.py                  # a second one, in another terminal; they share the events
-    FAIL_RATE=0.5 uv run worker.py    # steps fail at random; each pass skips what's done
-"""
+"""Stage 3 worker: finishes each noted like, one checked-off step at a time."""
 
 import os
 import signal
@@ -19,11 +14,7 @@ CLAIM_TIMEOUT = 30  # seconds. Quiet this long and we assume the worker died.
 
 
 def claim(conn: sqlite3.Connection, event_id: str, now: float) -> bool:
-    """Take the event if nobody has it, or if whoever had it has gone quiet.
-
-    Quiet isn't the same as dead: if the old worker was only slow, it is still
-    running this event too. So every step below has to be safe to run twice.
-    """
+    """Take the event if it's free or its worker has gone quiet. Quiet isn't dead, so a step can run twice."""
     with conn:
         taken = conn.execute(
             "UPDATE like_events SET claimed_at = ? "

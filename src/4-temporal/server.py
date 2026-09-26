@@ -1,11 +1,4 @@
-"""Stage 4: a like is a Temporal workflow. The request only starts it, with an ID
-taken from the like, so a retried request finds the workflow the first one started.
-
-    temporal server start-dev --ui-port 8233                   # terminal 1, UI at http://localhost:8233
-    uv run server.py --reset                                   # terminal 2
-    uv run worker.py                                           # terminal 3
-    uv run ../../client/client.py --lose-first-response --wait 2   # terminal 4
-"""
+"""Stage 4: a like starts a Temporal workflow, with an ID taken from the like."""
 
 import sys
 from contextlib import asynccontextmanager

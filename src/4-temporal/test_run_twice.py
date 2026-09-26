@@ -42,7 +42,6 @@ def test_notify_creator_twice():
 
 
 def test_add_counts_twice_when_the_activity_fails_after_commit(monkeypatch):
-    """The edge case: the side effect landed, Temporal didn't hear, so it runs the activity again."""
     monkeypatch.setenv("COUNT_MODE", "add")
     env = ActivityEnvironment()
     chaos.fail_once("after-count-commit")

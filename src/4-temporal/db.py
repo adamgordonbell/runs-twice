@@ -1,13 +1,9 @@
-"""Setup and stand-ins, the same in every stage. SQLite stands in for Postgres.
-
-likes.db is the app's database: videos and reactions. The seeded video has 1204
-likes, stored as 1204 reaction rows so the count can be SET from them.
-notifications.db is the notification service, a separate system with its own
-storage, so the app can't share a transaction with it. Both live in .data/<stage>/.
-"""
+"""The app's database (likes.db) and a stand-in notification service (notifications.db), in .data/<stage>/."""
 
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[2] / ".data" / Path(__file__).parent.name
@@ -39,16 +35,15 @@ CREATE TABLE IF NOT EXISTS notifications (
 """
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
+def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path or DB_PATH, timeout=10)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")  # a server and workers share the file
     conn.executescript(SCHEMA)
     return conn
 
 
 def reset() -> None:
-    """Fresh databases at 1204 likes."""
     for path in (DB_PATH, NOTIFY_DB_PATH):
         for suffix in ("", "-wal", "-shm"):
             Path(f"{path}{suffix}").unlink(missing_ok=True)
@@ -58,6 +53,8 @@ def reset() -> None:
             "INSERT INTO reactions VALUES (?, ?, 'LIKE')",
             [(f"viewer-{i:04d}", VIDEO) for i in range(SEED_LIKES)],
         )
+    with _service() as service:
+        service.executescript(NOTIFY_SCHEMA)
 
 
 def like_count(conn: sqlite3.Connection, video: str = VIDEO) -> int:
@@ -69,25 +66,28 @@ def has_liked(conn: sqlite3.Connection, user: str, video: str = VIDEO) -> bool:
     return row is not None and row[0] == "LIKE"
 
 
+@contextmanager
+def _service() -> Iterator[sqlite3.Connection]:
+    conn = sqlite3.connect(NOTIFY_DB_PATH, timeout=10)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def send_notification(video: str, user: str, idempotency_key: str | None = None) -> bool:
-    """Stands in for an email or push provider. With a key, a repeat of a key it has
-    already seen is dropped, the way payment and email APIs do. Returns True if this
-    call actually sent something."""
-    service = sqlite3.connect(NOTIFY_DB_PATH, timeout=10)
-    service.executescript(NOTIFY_SCHEMA)
-    with service:
+    """Returns False if this key was already sent, the way payment and email APIs drop a repeat."""
+    with _service() as service:
         cur = service.execute(
             "INSERT INTO notifications (idempotency_key, video, message) VALUES (?, ?, ?) "
             "ON CONFLICT (idempotency_key) DO NOTHING",
             (idempotency_key, video, f"{user} liked your video"),
         )
-    service.close()
     return cur.rowcount == 1
 
 
 def notifications(video: str = VIDEO) -> list[str]:
-    service = sqlite3.connect(NOTIFY_DB_PATH, timeout=10)
-    service.executescript(NOTIFY_SCHEMA)
-    rows = service.execute("SELECT message FROM notifications WHERE video = ? ORDER BY id", (video,)).fetchall()
-    service.close()
+    with _service() as service:
+        rows = service.execute("SELECT message FROM notifications WHERE video = ? ORDER BY id", (video,)).fetchall()
     return [message for (message,) in rows]
