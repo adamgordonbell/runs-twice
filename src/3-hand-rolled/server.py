@@ -1,11 +1,4 @@
-"""Stage 3: the request records the like and an event row in one transaction; a
-worker does the rest. A crash after the commit loses nothing, and since the event
-ID comes from the like, a retried request finds the same event.
-
-    uv run server.py --reset                                   # terminal 1
-    uv run worker.py                                           # terminal 2
-    uv run ../../client/client.py --lose-first-response --wait 2   # terminal 3
-"""
+"""Stage 3: the like and a note to finish the job commit together. worker.py does the rest."""
 
 import sqlite3
 import sys

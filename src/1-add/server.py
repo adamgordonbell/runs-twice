@@ -1,9 +1,4 @@
-"""Stage 1: a like is +1. What happens if this runs twice?
-
-    uv run server.py --reset                                   # terminal 1
-    uv run ../../client/client.py --lose-first-response        # terminal 2, or open http://localhost:8000
-    FAIL_RATE=0.5 uv run server.py --reset                     # or: the server fails after doing the work
-"""
+"""Stage 1: a like is +1."""
 
 import sys
 from pathlib import Path
