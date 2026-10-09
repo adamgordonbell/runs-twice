@@ -27,10 +27,9 @@ CREATE TABLE IF NOT EXISTS reactions (
 
 NOTIFY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS notifications (
-    id              INTEGER PRIMARY KEY,
-    idempotency_key TEXT UNIQUE,  -- optional; NULLs never collide
-    video           TEXT NOT NULL,
-    message         TEXT NOT NULL
+    id      INTEGER PRIMARY KEY,
+    video   TEXT NOT NULL,
+    message TEXT NOT NULL
 );
 """
 
@@ -76,15 +75,12 @@ def _service() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def send_notification(video: str, user: str, idempotency_key: str | None = None) -> bool:
-    """Returns False if this key was already sent, the way payment and email APIs drop a repeat."""
+def send_notification(video: str, user: str) -> None:
     with _service() as service:
-        cur = service.execute(
-            "INSERT INTO notifications (idempotency_key, video, message) VALUES (?, ?, ?) "
-            "ON CONFLICT (idempotency_key) DO NOTHING",
-            (idempotency_key, video, f"{user} liked your video"),
+        service.execute(
+            "INSERT INTO notifications (video, message) VALUES (?, ?)",
+            (video, f"{user} liked your video"),
         )
-    return cur.rowcount == 1
 
 
 def notifications(video: str = VIDEO) -> list[str]:
