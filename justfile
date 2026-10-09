@@ -31,8 +31,21 @@ temporal-server *ARGS:
 temporal-worker:
     cd src/4-temporal && uv run worker.py
 
+# stage 5: no Temporal in the server. The relay hands each saved like to Temporal. Needs `just dev-server` and the worker too
+outbox-server *ARGS:
+    cd src/5-outbox && uv run server.py {{ARGS}}
+
+# stage 5 relay. Env: FAIL_RATE=0.5
+outbox-relay:
+    cd src/5-outbox && uv run relay.py
+
+# stage 5 worker: runs the notify step. Env: FAIL_RATE=0.5
+outbox-worker:
+    cd src/5-outbox && uv run worker.py
+
 test:
     cd src/1-add && uv run pytest -q
     cd src/2-set && uv run pytest -q
     cd src/3-hand-rolled && uv run pytest -q
     cd src/4-temporal && uv run pytest -q
+    cd src/5-outbox && uv run pytest -q

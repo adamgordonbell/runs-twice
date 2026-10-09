@@ -2,7 +2,7 @@
 
 Alice likes a video. The server saves the like, updates the count, and notifies the creator. The response is lost on the way back, so her phone sends the like again.
 
-In a distributed system, everything eventually runs twice. Clients retry, queues redeliver, workers restart. This repo takes one small feature through four versions. Each version survives more of those possibilities, and each fix shows what the next one has to deal with.
+In a distributed system, everything eventually runs twice. Clients retry, queues redeliver, workers restart. This repo takes one small feature through five versions. Each version survives more of those possibilities, and each fix shows what the next one has to deal with.
 
 Two lessons come out of it. A step is safe to rerun when it records a fact (Alice liked this video) rather than applying a change (+1). When a step has to act on another system, like sending a notification, it passes an ID so that system can tell a retry from a new request. And a workflow engine handles the retries, but it can't make your steps safe to rerun. That part is always your job.
 
@@ -12,6 +12,8 @@ Two lessons come out of it. A step is safe to rerun when it records a fact (Alic
 2. **`src/2-set`: a like is a fact.** The retry changes nothing. But the database and the notification service are two systems, and a crash between them loses the notification for good.
 3. **`src/3-hand-rolled`: a note and a worker.** A like is saved as a note to finish the job. A worker records the like and its count in one transaction, checks off that step, then notifies, passing the note's ID to the notification service as an idempotency key. The bookkeeping grows until it's a small workflow engine with three TODOs still to be implemented.
 4. **`src/4-temporal`: the same steps using Temporal.** The workflow is three lines: record the like and count, then notify. Temporal runs each step at least once, so each step still has to be safe to run twice.
+
+5. **`src/5-outbox`: the database first, then Temporal.** The like, its count and a note commit in one transaction, with no Temporal call in the request. A small relay hands each note to Temporal, which sends the notification. Nothing is lost if the server dies after the commit, and a like doesn't need Temporal to be up. The cost is one more process, and the relay keeping track of what it has handed off.
 
 Every stage serves the same API, and `client/` works with all of them. SQLite stands in for the app's database. A second SQLite file stands in for the notification service.
 
@@ -24,6 +26,6 @@ just add                              # or: just set
 just click --lose-first-response      # in a second terminal
 ```
 
-Stages 3 and 4 also need a worker: `just hand-rolled-server` and `just hand-rolled-worker`, or `just dev-server`, `just temporal-server` and `just temporal-worker`. Then run `just click --lose-first-response --wait 2`. A like's ID comes from the user and the video, so after a stage 4 `--reset`, either like as `--user bob` or restart the dev server. Set `FAIL_RATE=0.5` on a server or worker to make it fail at the points where a rerun matters.
+Stages 3 and 4 also need a worker: `just hand-rolled-server` and `just hand-rolled-worker`, or `just dev-server`, `just temporal-server` and `just temporal-worker`. Stage 5 needs `just dev-server`, `just outbox-server`, `just outbox-relay` and `just outbox-worker`. Then run `just click --lose-first-response --wait 2`. A like's ID comes from the user and the video, so after a stage 4 `--reset`, either like as `--user bob` or restart the dev server. Set `FAIL_RATE=0.5` on a server or worker to make it fail at the points where a rerun matters.
 
 `just test` runs each stage's tests. Every test runs something twice, or fails it halfway, and checks the result.
