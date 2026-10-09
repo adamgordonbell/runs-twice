@@ -9,7 +9,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import chaos
-import db
+import likes
+import notifications
 
 app = FastAPI()
 
@@ -20,10 +21,10 @@ class Like(BaseModel):
 
 
 def handle_like(user: str, video: str) -> int:
-    with db.connect() as conn:
-        conn.execute("UPDATE videos SET like_count = like_count + 1 WHERE id = ?", (video,))
-        count = db.like_count(conn, video)
-    db.send_notification(video, user)
+    with likes.connect() as conn:
+        likes.increment(conn, video)
+        count = likes.count(conn, video)
+    notifications.send(video, user)
     chaos.maybe_fail("before-response")  # the work is done; the client gets an error and retries
     return count
 
@@ -35,11 +36,11 @@ def like(like: Like) -> dict:
 
 @app.get("/videos/{video}")
 def video_state(video: str, user: str = "alice") -> dict:
-    with db.connect() as conn:
+    with likes.connect() as conn:
         return {
-            "likes": db.like_count(conn, video),
-            "liked": db.has_liked(conn, user, video),
-            "notifications": db.notifications(video),
+            "likes": likes.count(conn, video),
+            "liked": likes.has_liked(conn, user, video),
+            "notifications": notifications.sent(video),
         }
 
 
@@ -49,6 +50,7 @@ def page() -> FileResponse:
 
 
 if __name__ == "__main__":
-    if "--reset" in sys.argv or not db.DB_PATH.exists():
-        db.reset()
+    if "--reset" in sys.argv or not likes.DB_PATH.exists():
+        likes.reset()
+        notifications.reset()
     uvicorn.run(app, port=8000, log_level="warning")

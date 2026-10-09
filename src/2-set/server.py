@@ -9,7 +9,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import chaos
-import db
+import likes
+import notifications
 
 app = FastAPI()
 
@@ -20,21 +21,13 @@ class Like(BaseModel):
 
 
 def handle_like(user: str, video: str) -> int:
-    with db.connect() as conn:
-        changed = conn.execute(
-            "INSERT INTO reactions VALUES (?, ?, 'LIKE') "
-            "ON CONFLICT (user, video) DO UPDATE SET reaction = 'LIKE' WHERE reaction <> 'LIKE'",
-            (user, video),
-        ).rowcount == 1
-        conn.execute(
-            "UPDATE videos SET like_count = "
-            "(SELECT COUNT(*) FROM reactions WHERE video = ? AND reaction = 'LIKE') WHERE id = ?",
-            (video, video),
-        )
-        count = db.like_count(conn, video)
+    with likes.connect() as conn:
+        changed = likes.add_reaction(conn, user, video)
+        likes.recount(conn, video)
+        count = likes.count(conn, video)
     chaos.maybe_fail("after-commit")  # the like is saved; the notification isn't sent yet
     if changed:
-        db.send_notification(video, user)
+        notifications.send(video, user)
     return count
 
 
@@ -45,11 +38,11 @@ def like(like: Like) -> dict:
 
 @app.get("/videos/{video}")
 def video_state(video: str, user: str = "alice") -> dict:
-    with db.connect() as conn:
+    with likes.connect() as conn:
         return {
-            "likes": db.like_count(conn, video),
-            "liked": db.has_liked(conn, user, video),
-            "notifications": db.notifications(video),
+            "likes": likes.count(conn, video),
+            "liked": likes.has_liked(conn, user, video),
+            "notifications": notifications.sent(video),
         }
 
 
@@ -59,6 +52,7 @@ def page() -> FileResponse:
 
 
 if __name__ == "__main__":
-    if "--reset" in sys.argv or not db.DB_PATH.exists():
-        db.reset()
+    if "--reset" in sys.argv or not likes.DB_PATH.exists():
+        likes.reset()
+        notifications.reset()
     uvicorn.run(app, port=8000, log_level="warning")

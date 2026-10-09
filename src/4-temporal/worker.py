@@ -9,9 +9,11 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 import chaos
-from activities import notify_creator, record_like, update_like_count
+from activities import notify_creator, record_like
 from shared import TASK_QUEUE
 from workflows import LikeWorkflow
+
+MAX_ACTIVITIES = 4  # threads for activities, and the most the Worker will take on at once
 
 
 async def main() -> None:
@@ -22,13 +24,14 @@ async def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: os._exit(130))
 
     client = await Client.connect("localhost:7233")
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=MAX_ACTIVITIES) as executor:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE,
             workflows=[LikeWorkflow],
-            activities=[record_like, update_like_count, notify_creator],
+            activities=[record_like, notify_creator],
             activity_executor=executor,
+            max_concurrent_activities=MAX_ACTIVITIES,  # unset, it would take 100 on these 4 threads
             # A worker caches the workflows it ran and gets their next task first. If it
             # dies, the server waits this long before handing the task to another worker
             # (default 10s). Shortened so the demo recovers quickly.

@@ -10,8 +10,8 @@ Two lessons come out of it. A step is safe to rerun when it records a fact (Alic
 
 1. **`src/1-add`: a like is +1.** The retry counts the like twice and notifies twice.
 2. **`src/2-set`: a like is a fact.** The retry changes nothing. But the database and the notification service are two systems, and a crash between them loses the notification for good.
-3. **`src/3-hand-rolled`: a note and a worker.** The like and a note to finish the job commit together. A worker checks off each step and passes the note's ID to the notification service as an idempotency key. The bookkeeping grows until it's a small workflow engine with three TODOs still to be implemented.
-4. **`src/4-temporal`: the same steps using Temporal.** The workflow is three lines. Temporal runs each step at least once, so each step still has to be safe to run twice.
+3. **`src/3-hand-rolled`: a note and a worker.** A like is saved as a note to finish the job. A worker records the like and its count in one transaction, checks off that step, then notifies, passing the note's ID to the notification service as an idempotency key. The bookkeeping grows until it's a small workflow engine with three TODOs still to be implemented.
+4. **`src/4-temporal`: the same steps using Temporal.** The workflow is three lines: record the like and count, then notify. Temporal runs each step at least once, so each step still has to be safe to run twice.
 
 Every stage serves the same API, and `client/` works with all of them. SQLite stands in for the app's database. A second SQLite file stands in for the notification service.
 

@@ -9,10 +9,11 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from temporalio.client import Client
-from temporalio.common import WorkflowIDReusePolicy
+from temporalio.common import WorkflowIDConflictPolicy, WorkflowIDReusePolicy
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
-import db
+import likes
+import notifications
 from shared import TASK_QUEUE, LikeEvent
 from workflows import LikeWorkflow
 
@@ -38,6 +39,9 @@ async def handle_like(temporal: Client, user: str, video: str) -> str:
             event,
             id=event.event_id,
             task_queue=TASK_QUEUE,
+            # Either way this like already has a workflow: still running (conflict policy),
+            # or finished (reuse policy). Neither starts a second one.
+            id_conflict_policy=WorkflowIDConflictPolicy.FAIL,
             id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
         )
     except WorkflowAlreadyStartedError:
@@ -52,11 +56,11 @@ async def like(like: Like) -> dict:
 
 @app.get("/videos/{video}")
 def video_state(video: str, user: str = "alice") -> dict:
-    with db.connect() as conn:
+    with likes.connect() as conn:
         return {
-            "likes": db.like_count(conn, video),
-            "liked": db.has_liked(conn, user, video),
-            "notifications": db.notifications(video),
+            "likes": likes.count(conn, video),
+            "liked": likes.has_liked(conn, user, video),
+            "notifications": notifications.sent(video),
         }
 
 
@@ -66,6 +70,7 @@ def page() -> FileResponse:
 
 
 if __name__ == "__main__":
-    if "--reset" in sys.argv or not db.DB_PATH.exists():
-        db.reset()
+    if "--reset" in sys.argv or not likes.DB_PATH.exists():
+        likes.reset()
+        notifications.reset()
     uvicorn.run(app, port=8000, log_level="warning")
