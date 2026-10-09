@@ -1,3 +1,5 @@
+"""Stage 4 worker: runs the like workflow and its steps. Ctrl-C kills it like a crash."""
+
 import asyncio
 import logging
 import os

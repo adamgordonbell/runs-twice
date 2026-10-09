@@ -1,3 +1,5 @@
+"""The like workflow: record the like and count, then notify. Temporal keeps track of which steps finished."""
+
 from datetime import timedelta
 
 from temporalio import workflow
