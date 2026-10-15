@@ -1,14 +1,13 @@
 """The app's database (likes.db) and a stand-in notification service (notifications.db), in .data/<stage>/."""
 
-import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parents[2] / ".data" / Path(__file__).parent.name
-DB_PATH = Path(os.environ.get("LIKES_DB", DATA_DIR / "likes.db"))
-NOTIFY_DB_PATH = Path(os.environ.get("NOTIFY_DB", DATA_DIR / "notifications.db"))
+DATA_DIR = Path(__file__).parents[2] / ".data" / Path(__file__).parent.name
+DB_PATH = DATA_DIR / "likes.db"
+NOTIFY_DB_PATH = DATA_DIR / "notifications.db"
 VIDEO = "video-123"
 SEED_LIKES = 1204
 
